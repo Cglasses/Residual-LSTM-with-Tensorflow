@@ -1,9 +1,10 @@
 import tensorflow as tf
 from itertools import chain
 from simple_tensor.tensor_operations import * 
+import numpy as np
 
 
-class LSTM():
+class LSTM(object):
     def __init__(self, input_feature_num, output_feature_num, memory_feature_num):
         """
         CLSTM Constructor
@@ -29,74 +30,155 @@ class LSTM():
         # the number of result feature of neural net4 block inside LSTM
         self.nn4_inside_LSTM_outputfeature_num = memory_feature_num
 
-        # gate for input features
-        self.input_feature_placeholder = tf.placeholder(tf.float32, shape=(None, self.input_feature_num), name='input_feature_placeholder')
         # gate for otput feature from previous LSTM
-        self.output_feature_placeholder = tf.placeholder(tf.float32, shape=(None, self.output_feature_num), name='output_feature_placeholder')
+        #self.output_feature_fromprevious_placeholder = tf.placeholder(tf.float32, shape=(None, self.output_feature_num), name='output_feature_fromprevious_placeholder')
         # gate for memory from previous LSTM cell
-        self.memory_feature_placeholder = tf.placeholder(tf.float32, shape=(None, self.memory_feature_num), name='memory_feature_placeholder')
+        #self.memory_feature_fromprevious_placeholder = tf.placeholder(tf.float32, shape=(None, self.memory_feature_num), name='memory_feature_fromprevious_placeholder')
 
         # placeholder for first neural net block
-        self.inside_LSTM_nn_placeholder = tf.placeholder(tf.float32, shape=(None, self.nn_inside_LSTM_feature_num))
+        self.inside_LSTM_nn_input = tf.placeholder(tf.float32, shape=(None, self.nn_inside_LSTM_inputfeature_num))
 
     
-    def inside_LSTM_nn(self, layer_out_num1, layer_out_num2, layer_out_num3, layer_out_num4, layer_out_num5, nn_code, cell_code):
-        """
+    def inside_LSTM_nn(self, layer_out_num1, layer_out_num2, layer_out_num3, nn_code, cell_code):
+         """
         A function of neural netwok block inside LSTM. 
         Args:
             layer_out_num1      :		an integer, the number of output from layer 1 int this block
             layer_out_num2      :		an integer, the number of output from layer 2 int this block
             layer_out_num3      :		an integer, the number of output from layer 3 int this block
-            layer_out_num4      :		an integer, the number of output from layer 4 int this block
-            layer_out_num5      :		an integer, the number of output from layer 5 int this block
             nn_code             :       a string, the code for this block (just for graph naming)
             cell_code           :       a string, the code for the LSTM cell (just for graph naming)
         Return:
             the output tensor and variable list of this block
         """
-        fc1, w_fc1, b_fc1 = new_fc_layer(self.inside_LSTM_nn_placeholder, self.nn_inside_LSTM_inputfeature_num, layer_out_num1,\
-                                             name='fc1_nn' + nn_code +"_" + cell_code, activation="RELU")
-        drop1 = tf.nn.dropout(fc1, 0.8)
+        # first convolution layer
+        fc1, w_fc1, b_fc1 = new_fc_layer(self.inside_LSTM_nn_input, self.nn_inside_LSTM_inputfeature_num, layer_out_num1,\
+                                             name='fc1_nn' + nn_code +"_" + cell_code, activation="LRELU")
+        #bn1, bn1_b, bn1_g = batch_norm(fc1, 1, name='bn1' + nn_code +"_" + cell_code, is_convolution=False)
+        drop1 = tf.nn.dropout(fc1, 0.95)
+        # second convolution layer
         fc2, w_fc2, b_fc2 = new_fc_layer(drop1, layer_out_num1, layer_out_num2,\
-                                             name='fc2_nn' + nn_code +"_" + cell_code, activation="RELU")
-        drop2 = tf.nn.dropout(fc2, 0.8)
+                                             name='fc2_nn' + nn_code +"_" + cell_code, activation="LRELU")
+        #bn2, bn2_b, bn2_g = batch_norm(fc2, 1, name='bn2' + nn_code +"_" + cell_code, is_convolution=False)
+        drop2 = tf.nn.dropout(fc1, 0.95)
+        # third convolution layer
         fc3, w_fc3, b_fc3 = new_fc_layer(drop2, layer_out_num2, layer_out_num3,\
-                                             name='fc3_nn' + nn_code +"_" + cell_code, activation="RELU")
-        drop3 = tf.nn.dropout(fc3, 0.8)
-        fc4, w_fc4, b_fc4 = new_fc_layer(drop3, layer_out_num3, layer_out_num4,\
-                                             name='fc4_nn' + nn_code +"_" + cell_code, activation="RELU")
-        drop4 = tf.nn.dropout(fc4)
-        fc5, w_fc5, b_fc5 = new_fc_layer(drop4, layer_out_num4, layer_out_num5,\
-                                             name='fc5_nn' + nn_code +"_" + cell_code, activation="RELU")
-        
-        vars = [w_fc1, b_fc1, w_fc2, b_fc2, w_fc3, b_fc3, w_fc4, b_fc4, w_fc5, b_fc5]
-        return fc5, vars
+                                             name='fc3_nn' + nn_code +"_" + cell_code, activation="none")
+        vars = [w_fc1, b_fc1, w_fc2, b_fc2, w_fc3, b_fc3] #, bn1_b, bn1_g, bn2_b, bn2_g]
+        return fc3, vars
 
 
-    def build_lstm_cell1(self, cell_code):
-        """
+    def build_lstm_cell(self, last_output, last_memmory, input_tensor, cell_code):
+         """
         A function of LSTM cell
         Args:
+            last_output         :       A tensor or numpy, the output from previous lstm cell
+            last_memmory        :       A tensor or numpy, the memory from previous lstm cell
+            input_tensor        :       A tensor or numpy, the input feature
             cell_code           :       a string, the code for the LSTM cell (just for graph naming)
         Return:
             the output tensor, feature memory and variable list of this LSTM cell
         """
-        s1 = tf.concat([self.input_feature_placeholder, self.output_feature_placeholder], axis=1, name='concat_' + str(cell_code))
-        s2, s2_vars = inside_LSTM_nn(10, 10, 10, 10, self.nn1_inside_LSTM_outputfeature_num, '1', cell_code)
-        s3, s3_vars = inside_LSTM_nn(10, 10, 10, 10, self.nn2_inside_LSTM_outputfeature_num, '2', cell_code)
-        s4, s4_vars = inside_LSTM_nn(10, 10, 10, 10, self.nn3_inside_LSTM_outputfeature_num, '3', cell_code)
+        s1 = tf.concat([input_tensor, last_output], axis=1, name='concat_' + str(cell_code))
+        self.inside_LSTM_nn_input = s1
+
+        s2, s2_vars = self.inside_LSTM_nn(5, 5, self.nn1_inside_LSTM_outputfeature_num, '1', cell_code)
+        s2 = tf.nn.sigmoid(s2, name = 's2_sig_' + cell_code)
+
+        s3, s3_vars = self.inside_LSTM_nn(5, 5, self.nn2_inside_LSTM_outputfeature_num, '2', cell_code)
+        s3 = tf.nn.sigmoid(s3, name = 's3_sig_' + cell_code)
+
+        s4, s4_vars = self.inside_LSTM_nn(5, 5, self.nn3_inside_LSTM_outputfeature_num, '3', cell_code)
         s4 = tf.tanh(s4, name='tanh_s4_' + cell_code)
-        s5, s5_vars = inside_LSTM_nn(10, 10, 10, 10, self.nn4_inside_LSTM_outputfeature_num, '4', cell_code)
+
+        s5, s5_vars = self.inside_LSTM_nn(5, 5, self.nn4_inside_LSTM_outputfeature_num, '4', cell_code)
+        s5 = tf.nn.sigmoid(s5, name = 's5_sig_' + cell_code)
+
         s6 = tf.multiply(s3, s4, name = 'multiply_s3_s4_' + cell_code)
-        s7 = tf.multiply(self.memory_feature_num, s2, name = 'multiply_s2_memory_' + cell_code)
+        #bns6, bns6_b, bns6_g = batch_norm(s6, 1, name='bns6' + "_" + cell_code, is_convolution=False)
+
+        s7 = tf.multiply(last_memmory, s2, name = 'multiply_s2_memory_' + cell_code)
+        #bns7, bns7_b, bns7_g = batch_norm(s7, 1, name='bns7' + "_" + cell_code, is_convolution=False)
+
         s8 = tf.add(s6, s7, name='add_s6_s7_' + cell_code)
+
         s9 = tf.tanh(s8, name='tanh_s8_' + cell_code)
+
         s10 = tf.multiply(s5, s9, name = 'multiply_s5_s10_' + cell_code)
 
         out, w_out, b_out = new_fc_layer(s10, self.memory_feature_num, self.output_feature_num,\
                                              name='out_nn_' + cell_code, activation="none")
+        out = tf.nn.sigmoid(out)
+
+        #bns6_vars = [bns6_b, bns6_g]
+        #bns7_vars = [bns7_b, bns7_g]
         s10_vars = [w_out, b_out]
-        LSTM_vars =  list(chain(*[s2_vars, s3_vars, s4_vars, s5_vars, s10_vars]))
+        LSTM_vars =  list(chain(*[s2_vars, s3_vars, s4_vars, s5_vars, s10_vars])) #, bns6_vars, bns7_vars]))
         return out, s8, LSTM_vars
+
+
+class ResidualLSTM(LSTM):
+    def __init__(self, batch_size, num_lstm_cell, input_feature_num, output_feature_num, memory_feature_num):
+        """
+        A Constructor
+        Args:
+            batch_size          :       an integer, the size of batch
+            num_lstm_cell       :       an integer, the number of lstm cell
+            input_feature_num   :       an integer, the number of input feature
+            output_feature_num  :       an integer, the number of output feature
+            memory_feature_num  :       an integer, the number of feature in memory
+        """
+        super(ResidualLSTM, self).__init__(input_feature_num, output_feature_num, memory_feature_num)
+        self.batch_size = batch_size
+        self.num_lstm_cell = num_lstm_cell
+        self.input_feature_num = input_feature_num
+        self.output_feature_num = output_feature_num
+        self.memory_feature_num = memory_feature_num
+        self.output_shape = [batch_size, num_lstm_cell, output_feature_num]
+
+        # gate for input features
+        self.input_feature_placeholder = tf.placeholder(tf.float32, shape=(None, num_lstm_cell, self.input_feature_num), name='input_feature_placeholder')
+        # gate for target
+        self.output = tf.placeholder(tf.float32, shape=(None, num_lstm_cell, self.output_feature_num), name='output_placeholder')
+    
+    def build_net(self):
+        """
+        A function for buliding sequence of LSTM
+        Return:
+            the output tensor and variable list of this LSTM cell
+        """
+        outs = []
+        cell_vars = []
+        for i in range(self.num_lstm_cell):
+            if i == 0:
+                last_output = tf.convert_to_tensor(np.zeros((self.batch_size, self.output_feature_num)).astype(np.float32))
+                last_memmory = tf.convert_to_tensor(np.zeros((self.batch_size, self.memory_feature_num)).astype(np.float32))
+
+            cell_input = tf.reshape(self.input_feature_placeholder[:, i, :], [self.batch_size, self.input_feature_num])
+            out, memory, cell_var = self.build_lstm_cell(last_output, last_memmory, cell_input, cell_code=str(i))
+            last_output = out
+            last_memmory = memory
+            outs.append(out)
+            cell_vars.extend(cell_var)
+
+        outs = tf.reshape(outs, [self.batch_size, self.num_lstm_cell, self.output_feature_num])
+        return outs, cell_vars
+    
+    def mse_loss(self, predicted):
+        """
+        A function for calculating the loss
+        Args:
+            predicted         :       A tensor, the prediction result
+        Return:
+            a single value of integer tensor 
+        """
+        loss = tf.subtract(predicted, self.output)
+        loss = tf.square(loss)
+        loss = tf.reduce_mean(loss)
+        return loss
+
+
+
+
 
         
